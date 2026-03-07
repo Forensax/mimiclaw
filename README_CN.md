@@ -129,11 +129,14 @@ cp main/mimi_secrets.h.example main/mimi_secrets.h
 #define MIMI_SECRET_TG_TOKEN        "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 #define MIMI_SECRET_API_KEY         "sk-ant-api03-xxxxx"
 #define MIMI_SECRET_MODEL_PROVIDER  "anthropic"     // "anthropic" 或 "openai"
+#define OPENAI_BASE_URL             ""              // 可选：OpenAI 兼容中转站，例如 "https://relay.example.com/v1"
 #define MIMI_SECRET_SEARCH_KEY      ""              // 可选：Brave Search API key
 #define MIMI_SECRET_TAVILY_KEY      ""              // 可选：Tavily API key（优先）
 #define MIMI_SECRET_PROXY_HOST      "10.0.0.1"      // 可选：代理地址
 #define MIMI_SECRET_PROXY_PORT      "7897"           // 可选：代理端口
 ```
+
+如果你用的是 OpenAI 兼容中转站，把 `OPENAI_BASE_URL` 设成基础地址即可，比如 `https://relay.example.com/v1`。固件会自动补上 `/chat/completions`；如果你直接填完整接口地址也能用。
 
 然后编译烧录：
 

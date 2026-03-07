@@ -2,6 +2,7 @@
 #include "mimi_config.h"
 #include "proxy/http_proxy.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "esp_log.h"
@@ -15,12 +16,21 @@ static const char *TAG = "llm";
 
 #define LLM_API_KEY_MAX_LEN 320
 #define LLM_MODEL_MAX_LEN   64
+#define LLM_OPENAI_URL_MAX_LEN  320
+#define LLM_OPENAI_HOST_MAX_LEN 128
+#define LLM_OPENAI_PATH_MAX_LEN 192
+#define LLM_OPENAI_HOST_HEADER_MAX_LEN (LLM_OPENAI_HOST_MAX_LEN + 8)
 #define LLM_DUMP_MAX_BYTES   (16 * 1024)
 #define LLM_DUMP_CHUNK_BYTES 320
 
 static char s_api_key[LLM_API_KEY_MAX_LEN] = {0};
 static char s_model[LLM_MODEL_MAX_LEN] = MIMI_LLM_DEFAULT_MODEL;
 static char s_provider[16] = MIMI_LLM_PROVIDER_DEFAULT;
+static char s_openai_api_url[LLM_OPENAI_URL_MAX_LEN] = MIMI_OPENAI_API_URL_DEFAULT;
+static char s_openai_host[LLM_OPENAI_HOST_MAX_LEN] = "api.openai.com";
+static char s_openai_host_header[LLM_OPENAI_HOST_HEADER_MAX_LEN] = "api.openai.com";
+static char s_openai_path[LLM_OPENAI_PATH_MAX_LEN] = "/v1/chat/completions";
+static int s_openai_port = 443;
 
 static void llm_log_payload(const char *label, const char *payload)
 {
@@ -79,6 +89,132 @@ static void safe_copy(char *dst, size_t dst_size, const char *src)
     size_t n = strnlen(src, dst_size - 1);
     memcpy(dst, src, n);
     dst[n] = '\0';
+}
+
+static bool str_has_suffix(const char *str, const char *suffix)
+{
+    size_t str_len;
+    size_t suffix_len;
+
+    if (!str || !suffix) return false;
+    str_len = strlen(str);
+    suffix_len = strlen(suffix);
+    if (suffix_len > str_len) return false;
+    return strcmp(str + str_len - suffix_len, suffix) == 0;
+}
+
+static void openai_endpoint_reset_defaults(void)
+{
+    safe_copy(s_openai_api_url, sizeof(s_openai_api_url), MIMI_OPENAI_API_URL_DEFAULT);
+    safe_copy(s_openai_host, sizeof(s_openai_host), "api.openai.com");
+    safe_copy(s_openai_host_header, sizeof(s_openai_host_header), "api.openai.com");
+    safe_copy(s_openai_path, sizeof(s_openai_path), "/v1/chat/completions");
+    s_openai_port = 443;
+}
+
+static bool openai_endpoint_configure(const char *base_url)
+{
+    static const char *scheme = "https://";
+    char base_path[LLM_OPENAI_PATH_MAX_LEN] = {0};
+    const char *host_start;
+    const char *p;
+    char *endptr = NULL;
+    size_t host_len;
+    size_t path_len = 0;
+    long parsed_port = 443;
+    int n;
+
+    if (!base_url || strncmp(base_url, scheme, strlen(scheme)) != 0) {
+        return false;
+    }
+
+    host_start = base_url + strlen(scheme);
+    p = host_start;
+    while (*p && *p != '/' && *p != ':') {
+        p++;
+    }
+
+    host_len = (size_t)(p - host_start);
+    if (host_len == 0 || host_len >= sizeof(s_openai_host)) {
+        return false;
+    }
+
+    memcpy(s_openai_host, host_start, host_len);
+    s_openai_host[host_len] = '\0';
+
+    if (*p == ':') {
+        parsed_port = strtol(p + 1, &endptr, 10);
+        if (endptr == p + 1 || parsed_port <= 0 || parsed_port > 65535) {
+            return false;
+        }
+        p = endptr;
+    }
+
+    if (*p == '/') {
+        const char *path_end = p;
+        while (*path_end && *path_end != '?' && *path_end != '#') {
+            path_end++;
+        }
+        path_len = (size_t)(path_end - p);
+        if (path_len >= sizeof(base_path)) {
+            return false;
+        }
+        memcpy(base_path, p, path_len);
+        base_path[path_len] = '\0';
+        while (path_len > 0 && base_path[path_len - 1] == '/') {
+            base_path[--path_len] = '\0';
+        }
+    }
+
+    if (base_path[0] == '\0') {
+        n = snprintf(s_openai_path, sizeof(s_openai_path), "%s", MIMI_OPENAI_CHAT_COMPLETIONS_PATH);
+    } else if (str_has_suffix(base_path, MIMI_OPENAI_CHAT_COMPLETIONS_PATH)) {
+        n = snprintf(s_openai_path, sizeof(s_openai_path), "%s", base_path);
+    } else {
+        n = snprintf(s_openai_path, sizeof(s_openai_path), "%s%s",
+                     base_path, MIMI_OPENAI_CHAT_COMPLETIONS_PATH);
+    }
+    if (n < 0 || (size_t)n >= sizeof(s_openai_path)) {
+        return false;
+    }
+
+    if (parsed_port == 443) {
+        safe_copy(s_openai_host_header, sizeof(s_openai_host_header), s_openai_host);
+        n = snprintf(s_openai_api_url, sizeof(s_openai_api_url), "https://%s%s",
+                     s_openai_host, s_openai_path);
+    } else {
+        n = snprintf(s_openai_host_header, sizeof(s_openai_host_header), "%s:%ld",
+                     s_openai_host, parsed_port);
+        if (n < 0 || (size_t)n >= sizeof(s_openai_host_header)) {
+            return false;
+        }
+        n = snprintf(s_openai_api_url, sizeof(s_openai_api_url), "https://%s%s",
+                     s_openai_host_header, s_openai_path);
+    }
+    if (n < 0 || (size_t)n >= sizeof(s_openai_api_url)) {
+        return false;
+    }
+
+    s_openai_port = (int)parsed_port;
+    return true;
+}
+
+static void openai_endpoint_init(void)
+{
+    const char *base_url = OPENAI_BASE_URL[0] ? OPENAI_BASE_URL : MIMI_OPENAI_BASE_URL_DEFAULT;
+
+    openai_endpoint_reset_defaults();
+
+    if (!openai_endpoint_configure(base_url)) {
+        ESP_LOGW(TAG, "Invalid OPENAI_BASE_URL '%s'; falling back to %s",
+                 base_url, MIMI_OPENAI_BASE_URL_DEFAULT);
+        openai_endpoint_reset_defaults();
+        return;
+    }
+
+    if (OPENAI_BASE_URL[0] != '\0') {
+        ESP_LOGI(TAG, "Using custom OpenAI base URL: %s", s_openai_api_url);
+    }
 }
 
 /* ── Response buffer ──────────────────────────────────────────── */
@@ -189,23 +325,35 @@ static bool provider_is_openai(void)
 
 static const char *llm_api_url(void)
 {
-    return provider_is_openai() ? MIMI_OPENAI_API_URL : MIMI_LLM_API_URL;
+    return provider_is_openai() ? s_openai_api_url : MIMI_LLM_API_URL;
 }
 
 static const char *llm_api_host(void)
 {
-    return provider_is_openai() ? "api.openai.com" : "api.anthropic.com";
+    return provider_is_openai() ? s_openai_host : "api.anthropic.com";
+}
+
+static const char *llm_api_host_header(void)
+{
+    return provider_is_openai() ? s_openai_host_header : "api.anthropic.com";
 }
 
 static const char *llm_api_path(void)
 {
-    return provider_is_openai() ? "/v1/chat/completions" : "/v1/messages";
+    return provider_is_openai() ? s_openai_path : "/v1/messages";
+}
+
+static int llm_api_port(void)
+{
+    return provider_is_openai() ? s_openai_port : 443;
 }
 
 /* ── Init ─────────────────────────────────────────────────────── */
 
 esp_err_t llm_proxy_init(void)
 {
+    openai_endpoint_init();
+
     /* Start with build-time defaults */
     if (MIMI_SECRET_API_KEY[0] != '\0') {
         safe_copy(s_api_key, sizeof(s_api_key), MIMI_SECRET_API_KEY);
@@ -287,7 +435,7 @@ static esp_err_t llm_http_direct(const char *post_data, resp_buf_t *rb, int *out
 
 static esp_err_t llm_http_via_proxy(const char *post_data, resp_buf_t *rb, int *out_status)
 {
-    proxy_conn_t *conn = proxy_conn_open(llm_api_host(), 443, 30000);
+    proxy_conn_t *conn = proxy_conn_open(llm_api_host(), llm_api_port(), 30000);
     if (!conn) return ESP_ERR_HTTP_CONNECT;
 
     int body_len = strlen(post_data);
@@ -301,7 +449,7 @@ static esp_err_t llm_http_via_proxy(const char *post_data, resp_buf_t *rb, int *
             "Authorization: Bearer %s\r\n"
             "Content-Length: %d\r\n"
             "Connection: close\r\n\r\n",
-            llm_api_path(), llm_api_host(), s_api_key, body_len);
+            llm_api_path(), llm_api_host_header(), s_api_key, body_len);
     } else {
         hlen = snprintf(header, sizeof(header),
             "POST %s HTTP/1.1\r\n"
@@ -311,7 +459,7 @@ static esp_err_t llm_http_via_proxy(const char *post_data, resp_buf_t *rb, int *
             "anthropic-version: %s\r\n"
             "Content-Length: %d\r\n"
             "Connection: close\r\n\r\n",
-            llm_api_path(), llm_api_host(), s_api_key, MIMI_LLM_API_VERSION, body_len);
+            llm_api_path(), llm_api_host_header(), s_api_key, MIMI_LLM_API_VERSION, body_len);
     }
 
     if (proxy_conn_write(conn, header, hlen) < 0 ||

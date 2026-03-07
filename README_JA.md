@@ -129,11 +129,14 @@ cp main/mimi_secrets.h.example main/mimi_secrets.h
 #define MIMI_SECRET_TG_TOKEN        "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 #define MIMI_SECRET_API_KEY         "sk-ant-api03-xxxxx"
 #define MIMI_SECRET_MODEL_PROVIDER  "anthropic"     // "anthropic" または "openai"
+#define OPENAI_BASE_URL             ""              // 任意：OpenAI互換リレー。例: "https://relay.example.com/v1"
 #define MIMI_SECRET_SEARCH_KEY      ""              // 任意：Brave Search APIキー
 #define MIMI_SECRET_TAVILY_KEY      ""              // 任意：Tavily APIキー（優先）
 #define MIMI_SECRET_PROXY_HOST      ""              // 任意：例 "10.0.0.1"
 #define MIMI_SECRET_PROXY_PORT      ""              // 任意：例 "7897"
 ```
+
+OpenAI互換のリレーを使う場合は、`OPENAI_BASE_URL` にベースURLを設定してください。例えば `https://relay.example.com/v1` です。ファームウェアが `/chat/completions` を自動で補い、完全なエンドポイントURLをそのまま入れても動きます。
 
 ビルドとフラッシュ：
 

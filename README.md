@@ -129,11 +129,14 @@ Edit `main/mimi_secrets.h`:
 #define MIMI_SECRET_TG_TOKEN        "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 #define MIMI_SECRET_API_KEY         "sk-ant-api03-xxxxx"
 #define MIMI_SECRET_MODEL_PROVIDER  "anthropic"     // "anthropic" or "openai"
+#define OPENAI_BASE_URL             ""              // optional: OpenAI-compatible relay, e.g. "https://relay.example.com/v1"
 #define MIMI_SECRET_SEARCH_KEY      ""              // optional: Brave Search API key
 #define MIMI_SECRET_TAVILY_KEY      ""              // optional: Tavily API key (preferred)
 #define MIMI_SECRET_PROXY_HOST      ""              // optional: e.g. "10.0.0.1"
 #define MIMI_SECRET_PROXY_PORT      ""              // optional: e.g. "7897"
 ```
+
+If you use an OpenAI-compatible relay, set `OPENAI_BASE_URL` to the base URL, for example `https://relay.example.com/v1`. The firmware appends `/chat/completions` automatically, and a full endpoint URL also works.
 
 Then build and flash:
 
