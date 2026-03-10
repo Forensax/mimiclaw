@@ -19,6 +19,7 @@ static char s_bot_token[128] = MIMI_SECRET_TG_TOKEN;
 static int64_t s_update_offset = 0;
 static int64_t s_last_saved_offset = -1;
 static int64_t s_last_offset_save_us = 0;
+static bool s_token_warned = false;
 
 #define TG_OFFSET_NVS_KEY            "update_offset"
 #define TG_DEDUP_CACHE_SIZE          64
@@ -378,7 +379,10 @@ static void telegram_poll_task(void *arg)
 
     while (1) {
         if (s_bot_token[0] == '\0') {
-            ESP_LOGW(TAG, "No bot token configured, waiting...");
+            if (!s_token_warned) {
+                ESP_LOGW(TAG, "No bot token configured, waiting...");
+                s_token_warned = true;
+            }
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
