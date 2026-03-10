@@ -1,5 +1,6 @@
-# User Profile
+# 用户资料
 
-- Name: (not set)
-- Language: Chinese / English
-- Timezone: (not set)
+- 名称：（未设置）
+- 语言：中文
+- 时区：Asia/Shanghai
+
